@@ -27,3 +27,4 @@ Create a new Space, choose Docker, push these files. The Dockerfile is ready.
 - Speed uses two lines and a known real distance; it needs a fixed camera. Estimates only.
 - Licence note: Ultralytics YOLO is AGPL-3.0, so publish your project under AGPL-3.0 too.
 # Vision-Detector
+# Vision-Detector
