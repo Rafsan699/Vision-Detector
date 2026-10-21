@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vision Detector</title>
+<style>
+:root{--bg:#e8eae6;--panel:#f6f7f4;--ink:#1f262c;--mute:#5d6770;--line:#c9cdc6;--accent:#0f5c63;--sign:#f2b705}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 "Segoe UI",system-ui,sans-serif}
+main{max-width:980px;margin:0 auto;padding:28px 18px 60px}
+h1{font-size:2.1rem;margin:0 0 4px;letter-spacing:-.02em}
+.sub{color:var(--mute);margin:0 0 22px;max-width:60ch}
+nav{display:flex;gap:6px;margin-bottom:16px}
+nav button{border:1px solid var(--line);background:transparent;padding:9px 16px;border-radius:8px;font:inherit;cursor:pointer;color:var(--ink)}
+nav button[aria-selected=true]{background:var(--ink);color:#fff;border-color:var(--ink)}
+section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px}
+section[hidden]{display:none}
+.drop{display:block;border:2px dashed var(--line);border-radius:10px;padding:26px;text-align:center;cursor:pointer;color:var(--mute)}
+.drop:hover,.drop:focus-within{border-color:var(--accent);color:var(--ink)}
+.drop input{position:absolute;opacity:0;width:1px;height:1px}
+.row{display:flex;flex-wrap:wrap;gap:16px;align-items:end;margin:16px 0}
+label.f{display:grid;gap:4px;font-size:.9rem;color:var(--mute)}
+input[type=number]{width:110px;padding:7px;border:1px solid var(--line);border-radius:6px;font:inherit}
+.go{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:11px 22px;font:inherit;font-weight:600;cursor:pointer}
+.go:disabled{opacity:.5;cursor:wait}
+.go:focus-visible,nav button:focus-visible{outline:3px solid var(--sign);outline-offset:2px}
+img,video{max-width:100%;border-radius:8px;display:block}
+.stage{position:relative;display:inline-block;max-width:100%}
+.ln{position:absolute;left:0;right:0;height:0;border-top:3px solid var(--sign);pointer-events:none}
+.ln b{position:absolute;right:6px;top:-24px;background:var(--sign);color:#000;font-size:.75rem;padding:1px 7px;border-radius:4px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
+.chips span{background:#fff;border:1px solid var(--line);border-radius:999px;padding:3px 12px;font-size:.9rem}
+table{border-collapse:collapse;width:100%;margin-top:12px}
+td,th{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+.err{color:#a3261b;margin-top:10px}
+.note{color:var(--mute);font-size:.88rem}
+</style>
+</head>
+<body>
+<main>
+<h1>Vision Detector</h1>
+<p class="sub">Upload a photo to find the objects in it, or upload road footage to measure how fast each vehicle is moving. Free and open source.</p>
+
+<nav role="tablist">
+  <button role="tab" aria-selected="true" data-tab="img">Detect objects</button>
+  <button role="tab" aria-selected="false" data-tab="vid">Vehicle speed</button>
+</nav>
+
+<section id="img">
+  <label class="drop"><input type="file" id="imgFile" accept="image/*"><span id="imgName">Choose or drop an image</span></label>
+  <div class="row">
+    <label class="f">Minimum confidence <input type="range" id="imgConf" min="0.1" max="0.9" step="0.05" value="0.35"></label>
+    <button class="go" id="imgGo" disabled>Detect objects</button>
+  </div>
+  <div id="imgOut"></div>
+</section>
+
+<section id="vid" hidden>
+  <label class="drop"><input type="file" id="vidFile" accept="video/*"><span id="vidName">Choose or drop a video</span></label>
+  <div id="vidPrev" hidden style="margin-top:14px">
+    <div class="stage"><video id="vidEl" controls muted></video>
+      <div class="ln" id="lnA"><b>Line A</b></div><div class="ln" id="lnB"><b>Line B</b></div></div>
+  </div>
+  <div class="row">
+    <label class="f">Line A position (%) <input type="number" id="la" value="40" min="5" max="95"></label>
+    <label class="f">Line B position (%) <input type="number" id="lb" value="70" min="5" max="95"></label>
+    <label class="f">Real distance between lines (m) <input type="number" id="dist" value="10" min="1" step="0.5"></label>
+    <button class="go" id="vidGo" disabled>Measure speed</button>
+  </div>
+  <p class="note">Place the lines across the road, measure or estimate the real distance between them (a lane dash is about 3 m), and use a fixed camera. Only the first 30 seconds are analysed. Speed is an estimate, not legal evidence.</p>
+  <div id="vidOut"></div>
+</section>
+</main>
+
+<script>
+const $=s=>document.querySelector(s);
+document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll("nav button").forEach(x=>x.setAttribute("aria-selected",x===b));
+  $("#img").hidden=b.dataset.tab!=="img"; $("#vid").hidden=b.dataset.tab!=="vid";
+});
+async function post(url,fd){
+  const r=await fetch(url,{method:"POST",body:fd});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(j.detail||"Request failed ("+r.status+")");
+  return j;
+}
+async function run(btn,out,label,fn){
+  btn.disabled=true; btn.textContent="Working…"; out.innerHTML="";
+  try{ await fn(); }catch(e){ out.innerHTML='<p class="err"></p>'; out.firstChild.textContent=e.message; }
+  btn.disabled=false; btn.textContent=label;
+}
+// ---- image
+$("#imgFile").onchange=e=>{ const f=e.target.files[0]; $("#imgName").textContent=f?f.name:"Choose or drop an image"; $("#imgGo").disabled=!f; };
+$("#imgGo").onclick=()=>run($("#imgGo"),$("#imgOut"),"Detect objects",async()=>{
+  const fd=new FormData(); fd.append("image",$("#imgFile").files[0]); fd.append("conf",$("#imgConf").value);
+  const j=await post("/api/detect",fd);
+  const count={}; j.detections.forEach(d=>count[d.label]=(count[d.label]||0)+1);
+  const chips=Object.entries(count).map(([k,v])=>`<span>${k} × ${v}</span>`).join("")||"<span>No objects found. Try lowering the confidence.</span>";
+  $("#imgOut").innerHTML=`<img src="${j.image}" alt="Detection result"><div class="chips">${chips}</div>`;
+});
+// ---- video
+function lines(){ $("#lnA").style.top=$("#la").value+"%"; $("#lnB").style.top=$("#lb").value+"%"; }
+["la","lb"].forEach(i=>$("#"+i).oninput=lines);
+$("#vidFile").onchange=e=>{ const f=e.target.files[0]; $("#vidName").textContent=f?f.name:"Choose or drop a video";
+  $("#vidGo").disabled=!f; if(f){ $("#vidEl").src=URL.createObjectURL(f); $("#vidPrev").hidden=false; lines(); } };
+$("#vidGo").onclick=()=>run($("#vidGo"),$("#vidOut"),"Measure speed",async()=>{
+  const fd=new FormData(); fd.append("video",$("#vidFile").files[0]);
+  fd.append("line_a",$("#la").value); fd.append("line_b",$("#lb").value); fd.append("distance_m",$("#dist").value);
+  const j=await post("/api/speed",fd);
+  const rows=j.vehicles.map(v=>`<tr><td>${v.type} #${v.id}</td><td>${v.kmh} km/h</td></tr>`).join("")
+    ||'<tr><td colspan="2">No vehicle crossed both lines. Move the lines onto the road and try again.</td></tr>';
+  $("#vidOut").innerHTML=`<video src="${j.video}" controls autoplay muted loop></video>
+    <p class="note">${j.tracked} vehicles tracked in ${j.seconds}s of footage.</p>
+    <table><tr><th>Vehicle</th><th>Estimated speed</th></tr>${rows}</table>`;
+});
+</script>
+</body>
+</html>
