@@ -17,7 +17,8 @@ OUT.mkdir(exist_ok=True)
 
 app = FastAPI(title="Vision Detector")
 lock = threading.Lock()          # one heavy job at a time
-IMAGE_MODEL = os.getenv("IMAGE_MODEL", "yoloe-11s-seg-pf.pt")  # prompt-free: ~4,500 object names
+# Updated to yolov8n.pt by default to prevent OOM (Out Of Memory) 502 errors on Render free tier
+IMAGE_MODEL = os.getenv("IMAGE_MODEL", "yolov8n.pt")  
 
 
 def load_image_model():
